@@ -4,14 +4,22 @@
 // Partial Copyright (C) Michael Möller <mmoeller@openhardwaremonitor.org> and Contributors.
 // All Rights Reserved.
 
-namespace LibreHardwareMonitor.Hardware
-{
-    public interface IElement
-    {
-        // accept visitor on this element
-        void Accept(IVisitor visitor);
+namespace LibreHardwareMonitor.Hardware;
 
-        // call accept(visitor) on all child elements (called only from visitors)
-        void Traverse(IVisitor visitor);
-    }
+/// <summary>
+/// Abstract parent with logic for the abstract class that stores data.
+/// </summary>
+public interface IElement
+{
+    /// <summary>
+    /// Accepts the observer for this instance.
+    /// </summary>
+    /// <param name="visitor">Computer observer making the calls.</param>
+    void Accept(IVisitor visitor);
+
+    /// <summary>
+    /// Call the <see cref="Accept"/> method for all child instances <c>(called only from visitors).</c>
+    /// </summary>
+    /// <param name="visitor">Computer observer making the calls.</param>
+    void Traverse(IVisitor visitor);
 }

@@ -1,17 +1,18 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net452</TargetFramework>
+    <TargetFramework>net472</TargetFramework>
     <AssemblyName>LibreHardwareMonitor</AssemblyName>
     <AssemblyTitle>Libre Hardware Monitor</AssemblyTitle>
     <Copyright>LibreHardwareMonitor</Copyright>
-    <Version>0.8.5</Version>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <ApplicationIcon>Resources\icon.ico</ApplicationIcon>
     <ApplicationManifest>Resources\app.manifest</ApplicationManifest>
     <StartupObject>LibreHardwareMonitor.Program</StartupObject>
     <UseWindowsForms>true</UseWindowsForms>
     <OutputPath>..\bin\$(Configuration)\</OutputPath>
+	  <LangVersion>latest</LangVersion>
+    <PlatformTarget>AnyCPU</PlatformTarget>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugType>full</DebugType>
@@ -20,11 +21,11 @@
     <DebugType>none</DebugType>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
-    <PackageReference Include="TaskScheduler" Version="2.8.21" />
-    <PackageReference Include="OxyPlot.Core" Version="2.0.0" />
-    <PackageReference Include="OxyPlot.WindowsForms" Version="2.0.0" />
-    <PackageReference Include="System.Management" Version="4.7.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="TaskScheduler" Version="2.12.2" />
+    <PackageReference Include="OxyPlot.Core" Version="2.2.0" />
+    <PackageReference Include="OxyPlot.WindowsForms" Version="2.2.0" />
+    <PackageReference Include="System.Management" Version="9.0.7" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System.Web" />
@@ -43,8 +44,8 @@
     <Compile Update="UI\ParameterForm.Designer.cs">
       <DependentUpon>ParameterForm.cs</DependentUpon>
     </Compile>
-    <Compile Update="UI\PortForm.Designer.cs">
-      <DependentUpon>PortForm.cs</DependentUpon>
+    <Compile Update="UI\InterfacePortForm.Designer.cs">
+      <DependentUpon>InterfacePortForm.cs</DependentUpon>
     </Compile>
   </ItemGroup>
   <ItemGroup>
@@ -60,8 +61,8 @@
     <EmbeddedResource Update="UI\ParameterForm.resx">
       <DependentUpon>ParameterForm.cs</DependentUpon>
     </EmbeddedResource>
-    <EmbeddedResource Update="UI\PortForm.resx">
-      <DependentUpon>PortForm.cs</DependentUpon>
+    <EmbeddedResource Update="UI\InterfacePortForm.resx">
+      <DependentUpon>InterfacePortForm.cs</DependentUpon>
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>

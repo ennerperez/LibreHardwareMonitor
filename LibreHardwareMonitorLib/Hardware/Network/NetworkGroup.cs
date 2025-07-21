@@ -9,129 +9,143 @@ using System.Linq;
 using System.Net.NetworkInformation;
 using System.Text;
 
-namespace LibreHardwareMonitor.Hardware.Network
+namespace LibreHardwareMonitor.Hardware.Network;
+
+internal class NetworkGroup : IGroup, IHardwareChanged
 {
-    internal class NetworkGroup : IGroup
+    public event HardwareEventHandler HardwareAdded;
+    public event HardwareEventHandler HardwareRemoved;
+
+    private readonly object _updateLock = new();
+    private readonly ISettings _settings;
+    private List<Network> _hardware = [];
+
+    public NetworkGroup(ISettings settings)
     {
-        private readonly Dictionary<string, Network> _networks = new Dictionary<string, Network>();
-        private readonly object _scanLock = new object();
-        private readonly ISettings _settings;
-        private List<Network> _hardware = new List<Network>();
+        _settings = settings;
+        UpdateNetworkInterfaces(settings);
 
-        public NetworkGroup(ISettings settings)
+        NetworkChange.NetworkAddressChanged += NetworkChange_NetworkAddressChanged;
+        NetworkChange.NetworkAvailabilityChanged += NetworkChange_NetworkAddressChanged;
+    }
+
+    public IReadOnlyList<IHardware> Hardware => _hardware;
+
+    public string GetReport()
+    {
+        var report = new StringBuilder();
+
+        foreach (Network network in _hardware)
         {
-            _settings = settings;
-            UpdateNetworkInterfaces(settings);
+            report.AppendLine(network.NetworkInterface.Description);
+            report.AppendLine(network.NetworkInterface.OperationalStatus.ToString());
+            report.AppendLine();
 
-            NetworkChange.NetworkAddressChanged += NetworkChange_NetworkAddressChanged;
-            NetworkChange.NetworkAvailabilityChanged += NetworkChange_NetworkAddressChanged;
-        }
-
-        public IReadOnlyList<IHardware> Hardware => _hardware;
-
-        public string GetReport()
-        {
-            var report = new StringBuilder();
-
-            foreach (Network network in _hardware)
+            foreach (ISensor sensor in network.Sensors)
             {
-                report.AppendLine(network.NetworkInterface.Description);
-                report.AppendLine(network.NetworkInterface.OperationalStatus.ToString());
+                report.AppendLine(sensor.Name);
+                report.AppendLine(sensor.Value.ToString());
                 report.AppendLine();
-
-                foreach (ISensor sensor in network.Sensors)
-                {
-                    report.AppendLine(sensor.Name);
-                    report.AppendLine(sensor.Value.ToString());
-                    report.AppendLine();
-                }
             }
-
-            return report.ToString();
         }
 
-        public void Close()
-        {
-            NetworkChange.NetworkAddressChanged -= NetworkChange_NetworkAddressChanged;
-            NetworkChange.NetworkAvailabilityChanged -= NetworkChange_NetworkAddressChanged;
+        return report.ToString();
+    }
 
-            foreach (Network network in _hardware)
-                network.Close();
-        }
+    public void Close()
+    {
+        NetworkChange.NetworkAddressChanged -= NetworkChange_NetworkAddressChanged;
+        NetworkChange.NetworkAvailabilityChanged -= NetworkChange_NetworkAddressChanged;
 
-        private void UpdateNetworkInterfaces(ISettings settings)
+        foreach (Network network in _hardware)
+            network.Close();
+    }
+
+    private void UpdateNetworkInterfaces(ISettings settings)
+    {
+        // When multiple events fire concurrently, we don't want threads interfering
+        // with others as they manipulate non-thread safe state.
+        lock (_updateLock)
         {
-            // When multiple events fire concurrently, we don't want threads interfering
-            // with others as they manipulate non-thread safe state.
-            lock (_scanLock)
+            List<NetworkInterface> networkInterfaces = GetNetworkInterfaces();
+            if (networkInterfaces == null)
+                return;
+
+            List<Network> removables = [];
+            List<Network> additions = [];
+
+            List<Network> hardware = [.. _hardware];
+
+            // Remove network interfaces that no longer exist.
+            for (int i = 0; i < hardware.Count; i++)
             {
-                IOrderedEnumerable<NetworkInterface> networkInterfaces = GetNetworkInterfaces();
-                if (networkInterfaces == null)
-                    return;
+                Network network = hardware[i];
+                if (networkInterfaces.Any(x => x.Id == network.NetworkInterface.Id))
+                    continue;
 
-
-                var foundNetworkInterfaces = networkInterfaces.ToDictionary(x => x.Id, x => x);
-
-                // Remove network interfaces that no longer exist.
-                foreach (KeyValuePair<string, Network> networkInterfacePair in _networks)
-                {
-                    if (foundNetworkInterfaces.ContainsKey(networkInterfacePair.Key))
-                        continue;
-
-
-                    networkInterfacePair.Value.Close();
-                    _networks.Remove(networkInterfacePair.Key);
-                }
-
-                // Add new network interfaces.
-                foreach (KeyValuePair<string, NetworkInterface> networkInterfacePair in foundNetworkInterfaces)
-                {
-                    if (!_networks.ContainsKey(networkInterfacePair.Key))
-                        _networks.Add(networkInterfacePair.Key, new Network(networkInterfacePair.Value, settings));
-                }
-
-                _hardware = _networks.Values.OrderBy(x => x.Name).ToList();
+                hardware.RemoveAt(i--);
+                removables.Add(network);
             }
-        }
 
-        private static IOrderedEnumerable<NetworkInterface> GetNetworkInterfaces()
-        {
-            int retry = 0;
-
-            while (retry++ < 5)
+            // Add new ones.
+            foreach (NetworkInterface networkInterface in networkInterfaces)
             {
-                try
+                if (hardware.All(x => x.NetworkInterface.Id != networkInterface.Id))
                 {
-                    return NetworkInterface.GetAllNetworkInterfaces()
-                                           .Where(DesiredNetworkType)
-                                           .OrderBy(x => x.Name);
-                }
-                catch (NetworkInformationException)
-                {
-                    // Disabling IPv4 while running can cause a NetworkInformationException: The pipe is being closed.
-                    // This can be retried.
+                    Network network = new(networkInterface, settings);
+                    hardware.Add(network);
+                    additions.Add(network);
                 }
             }
 
-            return null;
-        }
+            _hardware = hardware;
 
-        private void NetworkChange_NetworkAddressChanged(object sender, EventArgs e)
-        {
-            UpdateNetworkInterfaces(_settings);
-        }
+            foreach (Network removable in removables)
+                HardwareRemoved?.Invoke(removable);
 
-        private static bool DesiredNetworkType(NetworkInterface nic)
+            foreach (Network addition in additions)
+                HardwareAdded?.Invoke(addition);
+        }
+    }
+
+    private static List<NetworkInterface> GetNetworkInterfaces()
+    {
+        int retry = 0;
+
+        while (retry++ < 5)
         {
-            switch (nic.NetworkInterfaceType)
+            try
             {
-                case NetworkInterfaceType.Loopback:
-                case NetworkInterfaceType.Tunnel:
-                case NetworkInterfaceType.Unknown:
-                    return false;
-                default:
-                    return true;
+                return NetworkInterface.GetAllNetworkInterfaces()
+                                       .Where(IsDesiredNetworkType)
+                                       .OrderBy(static x => x.Name)
+                                       .ToList();
             }
+            catch (NetworkInformationException)
+            {
+                // Disabling IPv4 while running can cause a NetworkInformationException: The pipe is being closed.
+                // This can be retried.
+            }
+        }
+
+        return null;
+    }
+
+    private void NetworkChange_NetworkAddressChanged(object sender, EventArgs e)
+    {
+        UpdateNetworkInterfaces(_settings);
+    }
+
+    private static bool IsDesiredNetworkType(NetworkInterface nic)
+    {
+        switch (nic.NetworkInterfaceType)
+        {
+            case NetworkInterfaceType.Loopback:
+            case NetworkInterfaceType.Tunnel:
+            case NetworkInterfaceType.Unknown:
+                return false;
+            default:
+                return true;
         }
     }
 }
